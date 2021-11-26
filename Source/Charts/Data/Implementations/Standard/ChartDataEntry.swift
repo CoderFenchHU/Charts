@@ -16,9 +16,23 @@ open class ChartDataEntry: ChartDataEntryBase, NSCopying
     /// the x value
     @objc open var x = 0.0
     
+    //TODO: 新增属性  标记位  visible 为false不绘制 实现不连续的折线图
+    @objc open var visible = true
+    
     public required init()
     {
         super.init()
+    }
+    
+    ///  为一个不连续的折线图 初始化
+    ///  - Parameters:
+    ///   - x: x 值
+    ///   - y: y 值
+    ///   - visible: 当前值是否有效  false 不绘制这个点
+    @objc public init(x: Double, y: Double, visible: Bool = false){
+        super.init(y: y)
+        self.x = x
+        self.visible = visible
     }
     
     /// An Entry represents one single entry in the chart.

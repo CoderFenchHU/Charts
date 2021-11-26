@@ -328,8 +328,8 @@ open class LineChartRenderer: LineRadarRenderer
                 // Allocate once in correct size
                 _lineSegments = [CGPoint](repeating: CGPoint(), count: pointsPerEntryPair)
             }
-
-            for j in _xBounds.dropLast()
+             
+            for j in stride(from: _xBounds.min, through: _xBounds.range + _xBounds.min, by: 1)
             {
                 var e: ChartDataEntry! = dataSet.entryForIndex(j)
                 
@@ -391,61 +391,87 @@ open class LineChartRenderer: LineRadarRenderer
         }
         else
         { // only one color per dataset
-            guard dataSet.entryForIndex(_xBounds.min) != nil else {
-                return
-            }
-
-            var firstPoint = true
-
-            let path = CGMutablePath()
-            for x in stride(from: _xBounds.min, through: _xBounds.range + _xBounds.min, by: 1)
+             
+            var e1: ChartDataEntry!
+            var e2: ChartDataEntry!
+             
+            e1 = dataSet.entryForIndex(_xBounds.min)
+             
+            if e1 != nil
             {
-                guard let e1 = dataSet.entryForIndex(x == 0 ? 0 : (x - 1)) else { continue }
-                guard let e2 = dataSet.entryForIndex(x) else { continue }
-                
-                let startPoint =
-                    CGPoint(
+                context.beginPath()
+                var firstPoint = true
+                var closePath = false
+                let path = CGMutablePath()
+                for x in stride(from: _xBounds.min, through: _xBounds.range + _xBounds.min, by: 1)
+                {
+                    e1 = dataSet.entryForIndex(x == 0 ? 0 : (x - 1))
+                    e2 = dataSet.entryForIndex(x)
+                     
+                    if e1 == nil || e2 == nil { continue }
+                     
+                    let pt = CGPoint(
                         x: CGFloat(e1.x),
-                        y: CGFloat(e1.y * phaseY))
-                    .applying(valueToPixelMatrix)
-                
-                if firstPoint
-                {
-                    path.move(to: startPoint)
-                    firstPoint = false
-                }
-                else
-                {
-                    path.addLine(to: startPoint)
-                }
-                
-                if isDrawSteppedEnabled
-                {
-                    let steppedPoint =
-                        CGPoint(
+                        y: CGFloat(e1.y * phaseY)
+                        ).applying(valueToPixelMatrix)
+                     
+                    if firstPoint
+                    {
+                        if e1.visible {
+                            path.move(to: pt)
+                            firstPoint = false
+                        }else if e2.visible {
+                            path.move(to: CGPoint(
+                                x: CGFloat(e2.x),
+                                y: CGFloat(e2.y * phaseY)
+                                ).applying(valueToPixelMatrix))
+                        }
+                    }
+                    else if e1.visible
+                    {
+                        if closePath {
+                            continue
+                        }else {
+                            path.addLine(to: pt)
+                            
+                        }
+                    }
+                     
+                    if isDrawSteppedEnabled
+                    {
+                        path.addLine(to: CGPoint(
                             x: CGFloat(e2.x),
-                            y: CGFloat(e1.y * phaseY))
-                        .applying(valueToPixelMatrix)
-                    path.addLine(to: steppedPoint)
+                            y: CGFloat(e1.y * phaseY)
+                            ).applying(valueToPixelMatrix))
+                    }
+                    if e2.visible {
+                        if closePath {
+                            path.move(to: CGPoint(
+                                x: CGFloat(e2.x),
+                                y: CGFloat(e2.y * phaseY)
+                                ).applying(valueToPixelMatrix))
+                            closePath = false
+                        }else{
+                            path.addLine(to: CGPoint(
+                                x: CGFloat(e2.x),
+                                y: CGFloat(e2.y * phaseY)
+                                ).applying(valueToPixelMatrix))
+                        }
+                    }else {
+                        closePath = true
+                    }
                 }
-
-                let endPoint =
-                    CGPoint(
-                        x: CGFloat(e2.x),
-                        y: CGFloat(e2.y * phaseY))
-                    .applying(valueToPixelMatrix)
-                path.addLine(to: endPoint)
-            }
-            
-            if !firstPoint
-            {
-                if dataSet.isDrawLineWithGradientEnabled {
-                    drawGradientLine(context: context, dataSet: dataSet, spline: path, matrix: valueToPixelMatrix)
-                } else {
-                    context.beginPath()
-                    context.addPath(path)
-                    context.setStrokeColor(dataSet.color(atIndex: 0).cgColor)
-                    context.strokePath()
+                 
+                if !firstPoint
+                {
+                    if dataSet.isDrawLineWithGradientEnabled {
+                        drawGradientLine(context: context, dataSet: dataSet, spline: path, matrix: valueToPixelMatrix)
+                    } else {
+                        context.beginPath()
+                        context.addPath(path)
+                        context.setStrokeColor(dataSet.color(atIndex: 0).cgColor)
+                        context.strokePath()
+                    }
                 }
             }
         }
@@ -481,36 +507,59 @@ open class LineChartRenderer: LineRadarRenderer
         var e: ChartDataEntry!
         
         let filled = CGMutablePath()
-        
+        var drawFirst = false
         e = dataSet.entryForIndex(bounds.min)
-        if e != nil
+        if e != nil && e.visible
         {
+            drawFirst = true
             filled.move(to: CGPoint(x: CGFloat(e.x), y: fillMin), transform: matrix)
             filled.addLine(to: CGPoint(x: CGFloat(e.x), y: CGFloat(e.y * phaseY)), transform: matrix)
         }
-        
+        var currentEntry  :ChartDataEntry!
+        var previousEntry :ChartDataEntry!
+        previousEntry = e
+        var closed = false
         // create a new path
         for x in stride(from: (bounds.min + 1), through: bounds.range + bounds.min, by: 1)
         {
             guard let e = dataSet.entryForIndex(x) else { continue }
-            
+            currentEntry = e
+            if(!currentEntry.visible) {
+                if(closed || !drawFirst){continue}
+                filled.addLine(to: CGPoint(x: CGFloat(previousEntry.x), y: fillMin), transform: matrix)
+                filled.closeSubpath()
+                closed = true
+                continue
+            }
+            else if(closed) {
+                closed = false
+                filled.move(to: CGPoint(x: CGFloat(currentEntry.x), y: fillMin), transform: matrix)
+            }
             if isDrawSteppedEnabled
             {
                 guard let ePrev = dataSet.entryForIndex(x-1) else { continue }
                 filled.addLine(to: CGPoint(x: CGFloat(e.x), y: CGFloat(ePrev.y * phaseY)), transform: matrix)
             }
-            
-            filled.addLine(to: CGPoint(x: CGFloat(e.x), y: CGFloat(e.y * phaseY)), transform: matrix)
+            if drawFirst {
+                filled.addLine(to: CGPoint(x: CGFloat(e.x), y: CGFloat(e.y * phaseY)), transform: matrix)
+            }else{
+                drawFirst = true
+                filled.move(to: CGPoint(x: CGFloat(e.x), y: fillMin), transform: matrix)
+                filled.addLine(to: CGPoint(x: CGFloat(e.x), y: CGFloat(e.y * phaseY)), transform: matrix)
+            }
+            previousEntry = currentEntry
         }
-        
+         
         // close up
         e = dataSet.entryForIndex(bounds.range + bounds.min)
-        if e != nil
+        if e != nil && e.visible
         {
             filled.addLine(to: CGPoint(x: CGFloat(e.x), y: fillMin), transform: matrix)
         }
-        filled.closeSubpath()
-        
+        if drawFirst {
+            filled.closeSubpath()
+        }
+         
         return filled
     }
     
@@ -558,7 +607,7 @@ open class LineChartRenderer: LineRadarRenderer
                 for j in _xBounds
                 {
                     guard let e = dataSet.entryForIndex(j) else { break }
-                    
+                    if !e.visible { continue }
                     pt.x = CGFloat(e.x)
                     pt.y = CGFloat(e.y * phaseY)
                     pt = pt.applying(valueToPixelMatrix)
